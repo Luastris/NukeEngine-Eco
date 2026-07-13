@@ -1,0 +1,18 @@
+--- a/src/win32_window.c
++++ b/src/win32_window.c
+@@ -1281,6 +1281,15 @@
+     DWORD style = getWindowStyle(window);
+     DWORD exStyle = getWindowExStyle(window);
+ 
++    // NUKE PATCH: a transparent framebuffer must have NO redirection bitmap, so a
++    // DirectComposition swap chain shows the desktop through alpha<1 pixels (not white).
++    // The style bit is Win8+; define it if the SDK target predates that.
++#ifndef WS_EX_NOREDIRECTIONBITMAP
++#define WS_EX_NOREDIRECTIONBITMAP 0x00200000L
++#endif
++    if (fbconfig->transparent)
++        exStyle |= WS_EX_NOREDIRECTIONBITMAP;
++
+     if (!_glfw.win32.mainWindowClass)
+     {
+         WNDCLASSEXW wc = { sizeof(wc) };

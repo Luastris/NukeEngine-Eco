@@ -1,0 +1,15 @@
+# NukeEngine-Eco root (the superbuild + submodules live here).
+
+# Superbuild output (cmake -S . -B build)
+/build/
+
+# Release staging (Package Project writes game dists here in some projects)
+/dist/
+
+# Standalone per-module CMake trees (each submodule also carries its own ignore;
+# this covers a module checked out without one)
+/*/build/
+
+# Visual Studio local junk
+.vs/
+*.user

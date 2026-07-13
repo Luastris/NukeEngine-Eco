@@ -1,0 +1,42 @@
+[submodule "NukeEngine"]
+	path = NukeEngine
+	url = ../NukeEngine.git
+[submodule "NukeEngine-Editor"]
+	path = NukeEngine-Editor
+	url = ../NukeEngine-Editor.git
+[submodule "TestNUKEModule"]
+	path = TestNUKEModule
+	url = ../TestNUKEModule.git
+[submodule "NukeAudio"]
+	path = NukeAudio
+	url = ../NukeAudio.git
+[submodule "NukeCSharp"]
+	path = NukeCSharp
+	url = ../NukeCSharp.git
+[submodule "NukeGUI"]
+	path = NukeGUI
+	url = ../NukeGUI.git
+[submodule "NukeImGui"]
+	path = NukeImGui
+	url = ../NukeImGui.git
+[submodule "NukePhysicsJolt"]
+	path = NukePhysicsJolt
+	url = ../NukePhysicsJolt.git
+[submodule "NukePlayer"]
+	path = NukePlayer
+	url = ../NukePlayer.git
+[submodule "NukeRenderBGFX"]
+	path = NukeRenderBGFX
+	url = ../NukeRenderBGFX.git
+[submodule "NukeRenderDiligent"]
+	path = NukeRenderDiligent
+	url = ../NukeRenderDiligent.git
+[submodule "NukeRenderOGL"]
+	path = NukeRenderOGL
+	url = ../NukeRenderOGL.git
+[submodule "NukeScript"]
+	path = NukeScript
+	url = ../NukeScript.git
+[submodule "NukeUtils"]
+	path = NukeUtils
+	url = ../NukeUtils.git
