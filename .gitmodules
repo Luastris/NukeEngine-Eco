@@ -40,3 +40,18 @@
 [submodule "NukeUtils"]
 	path = NukeUtils
 	url = ../NukeUtils.git
+[submodule "NukeAtlasImporter"]
+	path = NukeAtlasImporter
+	url = ../NukeAtlasImporter.git
+[submodule "NukeGamepad"]
+	path = NukeGamepad
+	url = ../NukeGamepad.git
+[submodule "NukeTilemap"]
+	path = NukeTilemap
+	url = ../NukeTilemap.git
+[submodule "NukeTilemapEditor"]
+	path = NukeTilemapEditor
+	url = ../NukeTilemapEditor.git
+[submodule "NukeVFX"]
+	path = NukeVFX
+	url = ../NukeVFX.git
