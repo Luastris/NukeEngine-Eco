@@ -46,6 +46,12 @@ endif()
 
 enable_language(C CXX)
 
+# CMake-generated .vcxproj files carry no <UseDebugLibraries> by default, and the user-wide
+# vcpkg MSBuild integration reads exactly that flag to pick installed/.../lib vs debug/lib —
+# without it a Debug module SILENTLY links RELEASE vcpkg libs (mixed CRTs; boost::filesystem
+# objects crossing that seam corrupt and crash). Emit the flag per config for every target.
+set(CMAKE_VS_USE_DEBUG_LIBRARIES "$<CONFIG:Debug>")
+
 # ---- engine + editor: the hand-maintained solution, built in place -----------------------
 add_custom_target(NukeEngineSln ALL
     COMMAND "${CMAKE_VS_MSBUILD_COMMAND}" "${CMAKE_CURRENT_SOURCE_DIR}/NukeEngine/NukeEngine.sln"
@@ -62,6 +68,11 @@ set(NUKE_MODULES
     NukePhysicsJolt      # physics
     NukeAudio            # audio
     NukeCSharp           # C# scripting
+    NukeGamepad          # gamepad input provider (GLFW) — separate module by design
+    NukeVFX              # particle VFX (7.3) — separate module by design
+    NukeTilemap          # grid worlds (colony sims / roguelikes) — separate module by design
+    NukeTilemapEditor    # editor tooling companion (.nutile editor) — editor-only, never ships
+    NukeAtlasImporter    # .atlas (libgdx/TexturePacker) importer — editor-only, never ships
     TestNUKEModule       # the sample plugin
     NukePlayer           # the runtime host
 )
@@ -85,3 +96,7 @@ foreach(m ${NUKE_MODULES})
         add_dependencies(${m} NukeEngineSln)
     endif()
 endforeach()
+# Editor tooling companions link their runtime module's import lib — build after it.
+if(TARGET NukeTilemapEditor AND TARGET NukeTilemap)
+    add_dependencies(NukeTilemapEditor NukeTilemap)
+endif()

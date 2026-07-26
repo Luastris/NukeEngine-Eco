@@ -13,3 +13,4 @@
 # Visual Studio local junk
 .vs/
 *.user
+*.log

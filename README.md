@@ -230,6 +230,7 @@ Key mechanics:
 | `NUKE_PACKAGE_MOD=1` or `=<name>` | run Package Mod headlessly (optionally named) |
 | `NUKE_PLAY=1`              | enter PIE ~4 s after boot (headless play verification) |
 | `NUKE_AUDIO_NULL=1`        | audio module in null-device mode (headless runs) |
+| `NUKE_GPU_VALIDATION=1`    | Debug only: enable the D3D12 validation layer + DRED breadcrumbs (a device-removed / GPU-fault cause lands in the Console). Off by default — it costs FPS; turn it on only when the renderer is crashing. |
 
 ## Assorted gotchas (learned the hard way)
 
