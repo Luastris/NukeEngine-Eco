@@ -14,3 +14,4 @@
 .vs/
 *.user
 *.log
+/vc140.pdb

@@ -6,6 +6,9 @@ exports, a host **editor**, a runtime **player** that ships games, and hot-plugg
 This repository is the ecosystem ROOT — every part as a submodule plus the superbuild
 that builds them all with one command. **Best starting point.**
 
+> **Scope in one line:** NukeEngine is built for **single-player desktop games with deep
+> modding** — **Windows x64 today, no mobile, no consoles** (see [Scope & platforms](#scope--platforms)).
+
 ## Disclaimer
 
 And we're back! Extremely sorry for such a long silence — the engine and I ran into an
@@ -18,6 +21,31 @@ My little dream of a user-friendly, modular, extensible engine with built-in mod
 support is growing up. Maybe one day it'll be ready to become the foundation of our
 games ;)
 
+## Scope & platforms
+
+NukeEngine was designed from day one as a **modular engine for single-player desktop games
+with a broad modding toolset** — and the architecture is shaped by exactly that: a host with
+hot-pluggable modules, reflection-driven tooling, per-property mod diffs, and a mod pipeline
+built INTO the editor instead of bolted on afterwards. Everything below follows from that
+choice.
+
+| Target | Where we stand |
+|--------|----------------|
+| **Platform** | **Windows 10/11, x64.** That's the supported target today. |
+| **Other desktop OSes** | Not yet — a future direction, not a shipped feature. |
+| **Mobile (iOS / Android)** | **Not supported and not planned** for the foreseeable future. |
+| **Consoles** | **Not supported and not planned** for the foreseeable future. |
+| **Focus** | Single-player games. |
+| **Modding** | First-class: packed games mount read-only, mods are point diffs, mod C# loads additively. |
+
+**Why mobile/console are a no:** it's a matter of principle, not capability. Every hour spent
+on GLES/Metal ports, touch UX, console SDKs and certification is an hour not spent making the
+desktop experience deeper — so we don't spend it. The engine is aggressively optimized for
+desktop multicore (the job system pins and saturates every core; scenes run at many hundreds
+of FPS) and takes full advantage of desktop-class GPUs — hardware ray tracing, heavy world
+systems — because that's the hardware its games target. Mobile and consoles aren't a gap
+waiting to be filled; they're outside the mission.
+
 ## Ecosystem
 
 | Repository | What it is |
@@ -26,13 +54,19 @@ games ;)
 | [NukeEngine](https://github.com/Luastris/NukeEngine) | The core (engine DLL). |
 | [NukeEngine-Editor](https://github.com/Luastris/NukeEngine-Editor) | The editor host. |
 | [NukePlayer](https://github.com/Luastris/NukePlayer) | The player (the game exe your dist ships). |
-| [NukeRenderDiligent](https://github.com/Luastris/NukeRenderDiligent) | **Required.** The main renderer (Diligent Engine: D3D11/D3D12, RT). |
+| [NukeRenderDiligent](https://github.com/Luastris/NukeRenderDiligent) | **Required.** The main renderer (Diligent Engine: **Vulkan** / D3D12 / D3D11, hardware RT on Vk and D3D12). |
 | [NukeImGui](https://github.com/Luastris/NukeImGui) | **Required for the editor.** The editor's shared ImGui DLL — never ships with a game. |
 | [NukeGUI](https://github.com/Luastris/NukeGUI) | Runtime (in-game) GUI module — optional if your game draws no GUI. |
 | [NukePhysicsJolt](https://github.com/Luastris/NukePhysicsJolt) | Physics module (Jolt). |
 | [NukeScript](https://github.com/Luastris/NukeScript) | Lua scripting backend. |
 | [NukeCSharp](https://github.com/Luastris/NukeCSharp) | C# scripting backend (hosts modern .NET/CoreCLR). |
 | [NukeAudio](https://github.com/Luastris/NukeAudio) | The default audio system. |
+| [NukeVFX](https://github.com/Luastris/NukeVFX) | Particle VFX: emitters, shapes, forces, sub-emitters, trails, mesh particles, RT-visible particles. |
+| [NukeWater](https://github.com/Luastris/NukeWater) | Water: ocean/lake/river/waterfall surfaces, buoyancy, flow, spread, FLIP volumes, caustics. |
+| [NukeTilemap](https://github.com/Luastris/NukeTilemap) | Grid worlds (colony sims / roguelikes): tilesets, layers, `.nutile`. |
+| [NukeTilemapEditor](https://github.com/Luastris/NukeTilemapEditor) | Editor companion for `.nutile` — editor-only, never ships with a game. |
+| [NukeAtlasImporter](https://github.com/Luastris/NukeAtlasImporter) | `.atlas` (libgdx / TexturePacker) importer — editor-only, never ships. |
+| [NukeGamepad](https://github.com/Luastris/NukeGamepad) | Gamepad input provider (GLFW) — a module by design, like every other peripheral. |
 | [TestNUKEModule](https://github.com/Luastris/TestNUKEModule) | The pristine sample plugin (docs-in-code). Editor-only, auto-excluded from dists. |
 | [NukeUtils](https://github.com/Luastris/NukeUtils) | Tools: nukegen (reflection codegen for C++ < 26, needs Python) + clean-release staging. |
 | [NukeRenderBGFX](https://github.com/Luastris/NukeRenderBGFX) | Legacy bgfx renderer — WIP on pause, not required, not maintained. |
@@ -50,9 +84,69 @@ cmake --build build --config Debug -- /m
 The **superbuild** drives the engine + editor solution and every module that is PRESENT
 in the tree — a module you didn't pull is skipped with a notice, nothing breaks. Run dir
 is `NukeEngine/x64/<Config>` (editor, player, `modules/`, `shaders/` all land there).
-Requirements: VS2022 (v143) with the C++ workload (incl. ATL), [vcpkg](https://github.com/microsoft/vcpkg)
-with `VCPKG_ROOT` set, Python on PATH (reflection codegen), the .NET SDK if you build
-NukeCSharp.
+Requirements: **Windows 10/11 x64**, VS2022 (v143) with the C++ workload (incl. ATL),
+[vcpkg](https://github.com/microsoft/vcpkg) with `VCPKG_ROOT` set, Python on PATH (reflection
+codegen), the .NET SDK if you build NukeCSharp, and a GPU with up-to-date **Vulkan** drivers
+(the editor's default backend; hardware RT needs an RT-capable GPU).
+
+## Technologies
+
+### Render backends — the editor runs on Vulkan
+
+One HLSL shader source set, three backends (`0` = D3D11, `1` = D3D12, `2` = Vulkan):
+
+| Backend | Used as | What it brings |
+|---------|---------|----------------|
+| **Vulkan** (`2`) | **editor default** | Native ImGui multi-viewport: panels and asset editors detach into real per-window swapchains with full dock previews. Hardware ray tracing (`VK_KHR_ray_tracing_pipeline`, opted in at device creation), tessellation, background shader compilation. HLSL goes through glslang, RT shaders (SM6.x) through the vendored DXC emitting SPIR-V, plus our own SPIR-V disk cache (`config/shadercache_vk/`) so warm boots match D3D12. |
+| **Direct3D 12** (`1`) | **packaged-game default** | Hardware ray tracing, DirectComposition transparent windows, HDR10 output (player only). Detached editor windows fall back to the GDI-blit host path. |
+| **Direct3D 11** (`0`) | legacy fallback | No ray tracing. For old hardware / driver triage only. |
+
+> ⚠️ **Don't switch the editor off Vulkan.** `Preferences → Editor Render Backend` (an
+> engine-wide preference in `%APPDATA%`, applied on the next editor restart) exists mostly for
+> triage. Vulkan is the backend the editor is developed and tested on: its WSI multi-window
+> path is what the whole detachable-window architecture rides on, while the D3D route goes
+> through DXGI secondary swapchains and the GDI-blit host fallback — historically a minefield.
+> Running the editor on D3D11/D3D12 risks instability and crashes. The **runtime** backend is a
+> separate, project-level setting (`Project Settings → Render Backend` → `config/main.json`
+> `window.backend`), and there **D3D12 is the tested default** — RT reflections, DComp
+> transparency and HDR10 live there.
+
+### Stack
+
+| Technology | Where it's used | Upstream license |
+|------------|-----------------|------------------|
+| **C++20** (MSVC v143) — next stop C++26 native reflection | engine, editor, all modules | — |
+| **HLSL** (single shader source for every backend) | renderer + module shaders | — |
+| **Diligent Engine** (DiligentCore: Vulkan / D3D12 / D3D11) | NukeRenderDiligent | Apache-2.0 |
+| **Vulkan / SPIR-V toolchain** — Vulkan-Headers, volk, glslang, SPIRV-Tools, SPIRV-Cross | via DiligentCore | Apache-2.0 / MIT / BSD (per component) |
+| **DirectX Shader Compiler** — one vendored `dxcompiler.dll` (+ `dxil.dll`) serves both backends: DXIL for D3D12, SPIR-V for Vulkan | SM6.x + ray-tracing shaders | University of Illinois/NCSA (LLVM) |
+| **Dear ImGui 1.92** + **ImGuizmo** | NukeImGui (editor UI, gizmos) | MIT |
+| **Jolt Physics** | NukePhysicsJolt | MIT |
+| **miniaudio** (embedded decoders: ogg/wav/mp3/flac) | NukeAudio | public domain / MIT-0 |
+| **Lua 5.5** + **LuaBridge3** | NukeScript | MIT |
+| **.NET 8+ / CoreCLR** via `hostfxr` | NukeCSharp (players need the runtime, not the SDK) | MIT |
+| **Assimp** | mesh / model / animation import → native formats | BSD-3-Clause |
+| **Boost** (dll, filesystem, thread, chrono, container, …) | engine core (plugin loader, FS, time) | BSL-1.0 |
+| **GLFW** (patched: `WS_EX_NOREDIRECTIONBITMAP` for DComp transparency) | windowing, gamepad | Zlib |
+| **glm** · **nlohmann::json** · **stb** · **zstd** / **zlib** | math · serialization + config · images · NUPAK compression | MIT · MIT · MIT + public domain · BSD-3-Clause / Zlib |
+| **Python 3** | nukegen reflection codegen — build-time only, never shipped | PSF |
+| **CMake ≥ 3.20** + msbuild, **vcpkg** | superbuild, dependency acquisition | — |
+| **bgfx**, **OpenGL** | legacy renderers, not maintained | BSD-2-Clause / — |
+
+Third-party components stay under **their own licenses** — Luastris claims no rights in them.
+The authoritative copy of each license travels with the component in its own tree (`deps/`,
+vendored directory, or the `vcpkg` manifest that fetches it); the license identifiers above are
+a convenience summary, not a substitute. See `LICENSE.md` §16, and keep their notices in
+anything you ship.
+
+**Name & trademarks.** NukeEngine is an independent project and is **not** affiliated with,
+sponsored by, or endorsed by The Foundry Visionmongers Ltd. or its *Nuke* compositing software,
+nor with any other product whose name contains "Nuke". The name comes from this engine's own
+atomic nomenclature — a World is built out of **Atoms**, and releases are codenamed after the
+chemical elements in atomic-number order, by their LATIN names (Hydrogenium, Helium, …;
+isotopes mark major revisions of the same release — Deuterium is Hydrogenium gone
+cross-platform) — with its own logo, its own concept and its own niche. All other trademarks
+belong to their owners (`LICENSE.md` §11).
 
 ## What's new (since the last public update)
 
@@ -75,8 +169,12 @@ grouped:
 - Config moved Lua → JSON; full dependency upgrade & cleanup (dead submodules removed).
 
 ### Rendering
-- **New renderer: Diligent Engine** (D3D11/D3D12; RT reflections today, DLSS/FrameGen
+- **New renderer: Diligent Engine** (Vulkan / D3D12 / D3D11; RT reflections today, DLSS/FrameGen
   groundwork laid). bgfx moved out of the engine as a legacy module — WIP on pause.
+- **Vulkan backend** — the editor's default: native ImGui multi-viewport (real detachable
+  windows), hardware ray tracing (RT shaders compiled to SPIR-V by the same vendored DXC), own
+  SPIR-V disk cache. Packaged games stay on D3D12 (DComp transparency + HDR10).
+  See [Technologies](#technologies).
 - PBR: metallic-roughness materials, normal/specular/metal-rough/occlusion/emissive maps;
   lights + shadow mapping (dir/point/spot, PCF); per-pixel transparency with correct
   ordering; frustum culling.
@@ -218,6 +316,32 @@ Key mechanics:
   name updates that mod), the diff is computed against the mounted stack, dependencies
   (`requires`) are recorded automatically, and the mod self-registers in the game's
   `config/mods.json`. A mod's compiled C# assembly ships inside it and loads additively.
+- **Native C++ modules in mods/DLCs:** a mod may ship engine plugins under `modules/`
+  inside its pak. Machine code cannot run out of an archive (the OS loader needs a real
+  file), so mounting caches them to `config/modcache/<mod>/` (byte-identical files are
+  left untouched) and they are discovered — and enabled — alongside the host's own
+  modules, with the same ABI gate. The game's plugin list cannot know a mod's modules;
+  the mod being enabled IS the consent. A mod can never shadow a host module by reusing
+  its file name (the host's `modules/` is discovered first).
+- **Module dependencies:** `mod.json`/`pak.json` carry `"modules": ["NukeWater", ...]` —
+  the engine plugins the content is built on. Package Mod/DLC detects the list (component
+  types in packed JSON map to their owning plugin, native DLLs state their imports, script
+  backends answer for their own files); a hand-written list in `mod.json` is
+  authoritative and survives repacking. At mount, a mod/DLC whose module is missing is
+  SKIPPED with a console line (its components would load as dead placeholders otherwise);
+  a module the pak itself ships satisfies its own requirement.
+- **Patching another mod's component (`"replaces"`):** a fix mod does not need the broken
+  mod's sources. Prop-level bugs: override values with an ordinary point-diff mod.
+  Behavior bugs: every compiled component exposes its props, `[[nuke::func]]` methods and
+  `enabled` to ANY script through reflection — a fix script can mute the broken component
+  and drive a replacement beside it. Terminal cases: put
+  `"replaces": {"BuggyThing": "FixedThing"}` in the fix mod's `mod.json` — worlds and
+  prefabs that saved `BuggyThing` construct `FixedThing` instead. Props load BY NAME
+  through reflection, so a prop-compatible replacement picks up all saved data (its extra
+  props default). Substitutions stack across mods (mount order wins, chains resolve up to
+  4 hops); a replacement that is missing or disabled is ignored, so a disabled fix mod
+  never breaks loading. Late plugin enables honor the map too — a placeholder upgrading
+  after load cannot resurrect a replaced type.
 
 ## Dev hooks (env vars, fire ~2.5 s after editor boot)
 
@@ -244,5 +368,37 @@ Key mechanics:
 - Renderer-internal shader pairs (ui/shadow/sky/post/debug/outline*) are excluded from
   the material-shader scan in ONE place: `RendererInternalShader()` in `resdb.cpp`.
 - `dxcompiler.dll` + `dxil.dll` must sit next to the exe (vendored in
-  `NukeRenderDiligent/deps/dxc`, deployed by its CMake post-build).
+  `NukeRenderDiligent/deps/dxc`, deployed by its CMake post-build). Not D3D-only: the same DLL
+  compiles the SM6.x ray-tracing shaders for BOTH backends (DXIL for D3D12, SPIR-V for Vulkan),
+  which is why Diligent is pointed at it instead of its default `spv_dxcompiler.dll`.
 - `requires` is a C++20 keyword — the mod-dependency field is `requires_`.
+
+## License
+
+NukeEngine is **source-available** under the [NukeEngine License](LICENSE.md) (v1.1) — open to
+read, use and modify, but **not** OSI "open source": redistribution of the engine itself is
+restricted, and there are terms about what it may be used for. Read it. The short version:
+
+- **Free to make games with, commercial included.** Ship your game and its player however you
+  like; credit the engine, and say so if you built it with a *modified* engine/editor.
+- **Don't republish the engine as a fork.** Contribute improvements back (encouraged) or keep
+  them internal — never a rival build. Shipping a modified engine/editor to third parties needs
+  a separate written license.
+- **Your game's content is your business** — the license doesn't police themes; ratings and
+  legal compliance are the developer's job. What's banned is **real-world harm** (CSAM, real
+  incitement, deepfakes of real people, malware, fraud, unlawful surveillance) — modified
+  copies and private internal builds included; no paid license buys an exception.
+- **Sell your game however you like — just never sell chance.** Fixed-price DLC, skins,
+  subscriptions, microtransactions where the buyer gets exactly what they paid for: all fine.
+  Banned: real-money gambling and paid loot boxes/gacha. Randomness a player *earns by
+  playing* is expressly fine — paid = deterministic, random = earned.
+- **Plugins are yours to sell** — but a mod or plugin made for **someone else's game** may not
+  be monetized without that developer's express permission, especially when their game is
+  **free**. Giving it away is always allowed.
+- **Don't use the editor to rip other people's games** — the game's rightsholder can enforce
+  that clause directly.
+- **Third-party components keep their own licenses** and we claim nothing in them
+  (see [Technologies](#technologies) and `LICENSE.md` §16).
+
+Contributions are accepted under the [CLA](CLA.md). Both documents state the author's intent in
+plain terms and have **not** been reviewed by a lawyer.

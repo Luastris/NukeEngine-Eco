@@ -52,10 +52,19 @@ enable_language(C CXX)
 # objects crossing that seam corrupt and crash). Emit the flag per config for every target.
 set(CMAKE_VS_USE_DEBUG_LIBRARIES "$<CONFIG:Debug>")
 
+# ---- NukeGen: the native reflection generator, FIRST in the build -----------------------
+# Every reflection .gen.inc/.gen.cpp in the tree is produced by this exe (nukegen.py stays
+# only for old game projects' scaffolded CMakeLists). It deploys itself to NukeUtils/bin/,
+# where the engine prebuild, every module and the game-module scaffold expect it.
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/NukeUtils/NukeGen/CMakeLists.txt")
+    add_subdirectory(NukeUtils/NukeGen)
+    message(STATUS "NukeGen: included (native reflection generator)")
+endif()
+
 # ---- engine + editor: the hand-maintained solution, built in place -----------------------
 add_custom_target(NukeEngineSln ALL
     COMMAND "${CMAKE_VS_MSBUILD_COMMAND}" "${CMAKE_CURRENT_SOURCE_DIR}/NukeEngine/NukeEngine.sln"
-            /t:Build /p:Configuration=$<CONFIG> /p:Platform=x64 /m /v:m /nologo
+            /t:Build /p:Configuration=$<CONFIG> /p:Platform=x64 /m /nr:false /v:m /nologo
     COMMENT "NukeEngine.sln (engine + editor) — $<CONFIG>"
     VERBATIM)
 
@@ -70,6 +79,7 @@ set(NUKE_MODULES
     NukeCSharp           # C# scripting
     NukeGamepad          # gamepad input provider (GLFW) — separate module by design
     NukeVFX              # particle VFX (7.3) — separate module by design
+    NukeWater            # water (7.5) — separate module by design (UE-style water plugin)
     NukeTilemap          # grid worlds (colony sims / roguelikes) — separate module by design
     NukeTilemapEditor    # editor tooling companion (.nutile editor) — editor-only, never ships
     NukeAtlasImporter    # .atlas (libgdx/TexturePacker) importer — editor-only, never ships
@@ -91,6 +101,11 @@ endforeach()
 if(TARGET NukeImGui)
     add_dependencies(NukeEngineSln NukeImGui)
 endif()
+# NukeGen precedes the sln (the engine's own prebuild regenerates Reflect.gen.cpp with it);
+# the modules inherit the ordering through their NukeEngineSln dependency.
+if(TARGET NukeGen)
+    add_dependencies(NukeEngineSln NukeGen)
+endif()
 foreach(m ${NUKE_MODULES})
     if(TARGET ${m} AND NOT m STREQUAL "NukeImGui")
         add_dependencies(${m} NukeEngineSln)
@@ -99,4 +114,9 @@ endforeach()
 # Editor tooling companions link their runtime module's import lib — build after it.
 if(TARGET NukeTilemapEditor AND TARGET NukeTilemap)
     add_dependencies(NukeTilemapEditor NukeTilemap)
+endif()
+# The water module drives the Diligent renderer through its native hatch (same companion
+# pattern): it links the renderer's import lib — build after it.
+if(TARGET NukeWater AND TARGET NukeRenderDiligent)
+    add_dependencies(NukeWater NukeRenderDiligent)
 endif()

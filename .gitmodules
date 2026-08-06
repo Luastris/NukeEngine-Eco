@@ -55,3 +55,6 @@
 [submodule "NukeVFX"]
 	path = NukeVFX
 	url = ../NukeVFX.git
+[submodule "NukeWater"]
+	path = NukeWater
+	url = ../NukeWater.git
