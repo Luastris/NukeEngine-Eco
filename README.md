@@ -184,17 +184,31 @@ sudo apt install build-essential cmake ninja-build git curl zip unzip tar pkg-co
     libxfixes-dev libxkbcommon-dev libwayland-dev wayland-protocols \
     libgl1-mesa-dev libegl1-mesa-dev libvulkan-dev \
     libasound2-dev libpulse-dev libudev-dev libdbus-1-dev
-# Fedora
+# Fedora (classic, dnf-based)
 sudo dnf install gcc-c++ cmake ninja-build git curl zip unzip tar pkgconf-pkg-config \
     autoconf autoconf-archive automake libtool bison flex \
     libX11-devel libXrandr-devel libXinerama-devel libXcursor-devel libXi-devel \
     libXext-devel libXfixes-devel libxkbcommon-devel wayland-devel wayland-protocols-devel \
     mesa-libGL-devel mesa-libEGL-devel vulkan-loader-devel \
     alsa-lib-devel pulseaudio-libs-devel systemd-devel dbus-devel
+# Arch
+sudo pacman -S --needed base-devel cmake ninja git curl zip unzip tar autoconf-archive \
+    libx11 libxrandr libxinerama libxcursor libxi libxext libxfixes libxkbcommon \
+    wayland wayland-protocols mesa vulkan-icd-loader vulkan-headers \
+    alsa-lib libpulse dbus
 
 git clone https://github.com/microsoft/vcpkg ~/vcpkg && ~/vcpkg/bootstrap-vcpkg.sh
 export VCPKG_ROOT=$HOME/vcpkg
 ```
+
+**Atomic/immutable distros** (Bazzite, Silverblue/Kinoite, SteamOS): there is no `dnf` and
+layering dev packages into the ostree is the wrong tool — build inside a
+[distrobox](https://github.com/89luca89/distrobox) instead (`distrobox create -n nuke-dev
+-i ubuntu:22.04`, then the Debian/Ubuntu line above inside it). The home dir is shared, the
+built binaries run fine on the host, and `distrobox-export --bin` puts container `cmake`/
+`ninja` on the host `PATH` so the editor's own File → Build Engine works too. Bonus: an
+Ubuntu 22.04 box doubles as the release glibc baseline — binaries built there run on
+practically any 2022+ distro.
 
 Optional but recommended: `dotnet-sdk-8.0` (NukeCSharp), `zenity` **or** `kdialog`
 (native file dialogs; the editor picks whichever matches your desktop).
