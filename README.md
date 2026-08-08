@@ -7,7 +7,8 @@ This repository is the ecosystem ROOT — every part as a submodule plus the sup
 that builds them all with one command. **Best starting point.**
 
 > **Scope in one line:** NukeEngine is built for **single-player desktop games with deep
-> modding** — **Windows x64 today, no mobile, no consoles** (see [Scope & platforms](#scope--platforms)).
+> modding** — **Windows x64 + macOS (Deuterium), no mobile, no consoles**
+> (see [Scope & platforms](#scope--platforms)).
 
 ## Disclaimer
 
@@ -31,8 +32,8 @@ choice.
 
 | Target | Where we stand |
 |--------|----------------|
-| **Platform** | **Windows 10/11, x64.** That's the supported target today. |
-| **Other desktop OSes** | Not yet — a future direction, not a shipped feature. |
+| **Platform** | **Windows 10/11 x64** and **macOS (Apple Silicon / Intel)** — the Deuterium cross-platform milestone. |
+| **Other desktop OSes** | Linux: the build plumbing is platform-split already (run dir `linux/`, POSIX branches in place), but it is untested — a direction, not a shipped feature. |
 | **Mobile (iOS / Android)** | **Not supported and not planned** for the foreseeable future. |
 | **Consoles** | **Not supported and not planned** for the foreseeable future. |
 | **Focus** | Single-player games. |
@@ -72,7 +73,7 @@ waiting to be filled; they're outside the mission.
 | [NukeRenderBGFX](https://github.com/Luastris/NukeRenderBGFX) | Legacy bgfx renderer — WIP on pause, not required, not maintained. |
 | [NukeRenderOGL](https://github.com/Luastris/NukeRenderOGL) | Legacy OpenGL renderer — not maintained. |
 
-## Quick start
+## Quick start (Windows)
 
 ```
 git clone --recurse-submodules https://github.com/Luastris/NukeEngine-Eco.git
@@ -89,6 +90,88 @@ Requirements: **Windows 10/11 x64**, VS2022 (v143) with the C++ workload (incl. 
 codegen), the .NET SDK if you build NukeCSharp, and a GPU with up-to-date **Vulkan** drivers
 (the editor's default backend; hardware RT needs an RT-capable GPU).
 
+## Quick start (macOS)
+
+One-time machine setup (Xcode Command Line Tools assumed):
+
+```
+brew install cmake pkg-config vulkan-loader molten-vk        # Vulkan runtime = MoltenVK
+git clone https://github.com/microsoft/vcpkg && ./vcpkg/bootstrap-vcpkg.sh
+export VCPKG_ROOT=$PWD/vcpkg
+```
+
+Check out the tree + the two vendored deps that are NOT git submodules (gitignored on
+purpose — the Windows dev tree carries them the same way):
+
+```
+git clone --recurse-submodules https://github.com/Luastris/NukeEngine-Eco.git
+cd NukeEngine-Eco
+git clone https://github.com/DiligentGraphics/DiligentCore.git \
+    NukeRenderDiligent/deps/DiligentEngine/DiligentCore
+git -C NukeRenderDiligent/deps/DiligentEngine/DiligentCore \
+    checkout $(grep -o '`[0-9a-f]\{40\}`' NukeRenderDiligent/patches/README.md | tr -d '\`')
+git -C NukeRenderDiligent/deps/DiligentEngine/DiligentCore submodule update --init --recursive
+git clone https://github.com/kunitoki/LuaBridge3.git NukeScript/deps/LuaBridge3
+git -C NukeScript/deps/LuaBridge3 \
+    checkout $(git -C NukeScript ls-tree HEAD deps/LuaBridge3 | awk '{print $3}')
+```
+
+(The lua sources themselves are vendored directly inside NukeScript — nothing extra to fetch.)
+
+Engine dependencies (classic vcpkg install, one long first run) + the ONE shared dynamic
+GLFW every window-touching module loads (three static copies would collide in objc). The
+default build is **universal (arm64 + x86_64)** — the triplets live in
+`vcpkg-overlays/triplets/`:
+
+```
+"$VCPKG_ROOT/vcpkg" install assimp boost-atomic boost-bind boost-chrono boost-config \
+    boost-container boost-dll boost-filesystem boost-function boost-smart-ptr boost-system \
+    boost-thread boost-tokenizer boost-tuple glfw3 glm lua meshoptimizer nlohmann-json \
+    stb zstd zlib --triplet=universal-osx --overlay-triplets=vcpkg-overlays/triplets
+"$VCPKG_ROOT/vcpkg" install "glfw3:universal-osx-dynamic" --overlay-triplets=vcpkg-overlays/triplets
+```
+
+(For fast native-only iteration: configure with `-DNUKE_MACOS_UNIVERSAL=OFF` and install
+the same list for `arm64-osx` / `x64-osx` instead.)
+
+Build (single-config trees; the editor's File → Build Engine drives the same dirs):
+
+```
+cmake -S . -B build-mac -DCMAKE_BUILD_TYPE=Debug             # VCPKG_ROOT must be set
+cmake --build build-mac -j10
+cmake -S . -B build-mac-release -DCMAKE_BUILD_TYPE=Release   # Package Project needs it
+cmake --build build-mac-release -j10
+```
+
+Every binary is stamped with its architecture set: the configure banner, the boot log
+(`[config] build: arm64+x86_64 (running arm64)`) and the bundles' `NukeBuildArchitectures`
+plist key all say the same thing — no guessing. `stage_release.sh` prints a `lipo` report.
+
+Run dir is `NukeEngine/macos/<Config>`; the editor is `NukeEngine-Editor.app` inside it,
+and every build's final step mirrors the runtime (player, dylibs incl. MoltenVK, modules,
+shaders, fonts) into the bundle — the `.app` is **self-contained**: copy it alone to
+`/Applications` and it runs, edits and packages games. In the dev tree the loose run-dir
+layout beside the `.app` always wins (fresh binaries; the inner copies are only loaded by
+a bundle standing alone). Package Project emits a self-contained `<Game>.app`. Per-machine
+state (imgui layout, saved config, shader caches, saves) lives in
+`~/Library/Application Support/<App>/` for installed bundles — never beside or inside a
+deployed `.app`; dev trees keep everything in the run dir, same as Windows. The .NET SDK
+is needed only for NukeCSharp. macOS differences: rendering is **Vulkan via MoltenVK**
+(hardware RT is unavailable — MoltenVK exposes no `VK_KHR_ray_tracing_pipeline`; the
+engine falls back to raster exactly like on non-RT GPUs), HDR output rides the ST2084
+swap chain (EDR), and window transparency uses the alpha-composited swap chain instead
+of DirectComposition.
+
+GUI launches (Finder/Dock) don't see your shell profile: the editor appends the standard
+toolchain homes to `PATH` (Homebrew, `/usr/local`, the .NET and CMake.app dirs) and
+discovers `VCPKG_ROOT` on its own (build-time location first, then `~/vcpkg`,
+`~/projects/vcpkg`, `/opt/vcpkg`, ...) — both logged at boot, an env var still wins.
+Game-module builds (File → Build & Reload Game Modules) reuse a classic vcpkg install
+when one has the engine's triplets (`universal-osx`/`arm64-osx`/`x64-osx`; on Windows
+`x64-windows`); without one, the vcpkg manifest builds the public deps into the module's
+build dir on first configure — slow once, and `libbacktrace` needs
+`brew install autoconf autoconf-archive automake libtool`.
+
 ## Technologies
 
 ### Render backends — the editor runs on Vulkan
@@ -97,12 +180,12 @@ One HLSL shader source set, three backends (`0` = D3D11, `1` = D3D12, `2` = Vulk
 
 | Backend | Used as | What it brings |
 |---------|---------|----------------|
-| **Vulkan** (`2`) | **editor default** | Native ImGui multi-viewport: panels and asset editors detach into real per-window swapchains with full dock previews. Hardware ray tracing (`VK_KHR_ray_tracing_pipeline`, opted in at device creation), tessellation, background shader compilation. HLSL goes through glslang, RT shaders (SM6.x) through the vendored DXC emitting SPIR-V, plus our own SPIR-V disk cache (`config/shadercache_vk/`) so warm boots match D3D12. |
-| **Direct3D 12** (`1`) | **packaged-game default** | Hardware ray tracing, DirectComposition transparent windows, HDR10 output (player only). Detached editor windows fall back to the GDI-blit host path. |
+| **Vulkan** (`2`) | **editor default; the only backend on macOS (MoltenVK)** | Native ImGui multi-viewport: panels and asset editors detach into real per-window swapchains with full dock previews. Hardware ray tracing (`VK_KHR_ray_tracing_pipeline`, opted in at device creation; not exposed by MoltenVK — raster fallback there), tessellation, background shader compilation. HLSL goes through glslang, RT shaders (SM6.x) through the vendored DXC emitting SPIR-V, plus our own SPIR-V disk cache (`config/shadercache_vk/`) so warm boots match D3D12. On macOS the swap chain also carries HDR (ST2084/EDR) and alpha-composited transparency. |
+| **Direct3D 12** (`1`) | **packaged-game default on Windows** (a macOS config asking for D3D is forced to Vulkan with a log line) | Hardware ray tracing, DirectComposition transparent windows, HDR10 output (player only). Detached editor windows fall back to the GDI-blit host path. |
 | **Direct3D 11** (`0`) | legacy fallback | No ray tracing. For old hardware / driver triage only. |
 
 > ⚠️ **Don't switch the editor off Vulkan.** `Preferences → Editor Render Backend` (an
-> engine-wide preference in `%APPDATA%`, applied on the next editor restart) exists mostly for
+> engine-wide preference in `%APPDATA%` / `~/Library/Application Support`, applied on the next editor restart) exists mostly for
 > triage. Vulkan is the backend the editor is developed and tested on: its WSI multi-window
 > path is what the whole detachable-window architecture rides on, while the D3D route goes
 > through DXGI secondary swapchains and the GDI-blit host fallback — historically a minefield.
@@ -181,7 +264,7 @@ grouped:
 - Environment: sky, sun, moon, stars, day cycle, moon phases; reflection probes with
   box-projection parallax.
 - Post: MSAA + FXAA + TAA, bloom, SSR, color grade, vignette, custom post shaders.
-- HDR10 output (player only, Windows).
+- HDR10 output (player only; DXGI color space on Windows, ST2084/EDR swap chain on macOS).
 - Texture pipeline: BC compression with import-time encoding choice (BC1 small/lossy,
   BC3 for diffuse+alpha, BC5 for normals), sampling modes, RenderTextures, GIF support.
 - Render-pass object-id feature for shaders; window abilities via config (borderless,
@@ -283,6 +366,20 @@ dist/
                         + managed/bin/GameScripts.dll (compiled C#)
 ```
 
+macOS games are **download-and-run**: the bundle carries its own universal Vulkan runtime
+(`libMoltenVK.dylib`, official Khronos release — auto-vendored at configure time) plus the
+shared `libglfw`, so a clean machine with no Vulkan SDK/brew needs nothing installed. Dev
+machines still prefer the system Vulkan loader (validation layers) — the bundled MoltenVK
+is the fallback.
+
+On **macOS** the same layout lands inside a self-contained `dist/<GameName>.app`
+(`Contents/MacOS/` holds the renamed player binary, `libNukeEngine.dylib`, `modules/`,
+`config/`, `content/game.nupak`, `mods/`; the icon becomes `Resources/game.icns` via
+sips/iconutil — the stock engine logo when the project sets none). Editor-only modules are
+excluded by their `editorTool()` flag as well as the NukeImGui-import scan. At runtime the
+bundle is never written to: per-user state goes to `~/Library/Application Support/<GameName>/`
+(the user's `config/mods.json` there overrides the shipped one).
+
 Key mechanics:
 
 - **Cooking:** only the dependency closure of the manifest ships (startup world → every
@@ -367,7 +464,7 @@ Key mechanics:
   silently resets on world save / PIE stop / packaging.
 - Renderer-internal shader pairs (ui/shadow/sky/post/debug/outline*) are excluded from
   the material-shader scan in ONE place: `RendererInternalShader()` in `resdb.cpp`.
-- `dxcompiler.dll` + `dxil.dll` must sit next to the exe (vendored in
+- (Windows) `dxcompiler.dll` + `dxil.dll` must sit next to the exe (vendored in
   `NukeRenderDiligent/deps/dxc`, deployed by its CMake post-build). Not D3D-only: the same DLL
   compiles the SM6.x ray-tracing shaders for BOTH backends (DXIL for D3D12, SPIR-V for Vulkan),
   which is why Diligent is pointed at it instead of its default `spv_dxcompiler.dll`.

@@ -1,7 +1,9 @@
 # NukeEngine-Eco root (the superbuild + submodules live here).
 
-# Superbuild output (cmake -S . -B build)
+# Superbuild output: /build (Windows/VS), /build-mac + /build-mac-release (Deuterium;
+# the editor's File -> Build Engine uses these names too), any future /build-<platform>
 /build/
+/build-*/
 
 # Release staging (Package Project writes game dists here in some projects)
 /dist/
@@ -15,3 +17,6 @@
 *.user
 *.log
 /vc140.pdb
+
+# macOS Finder junk (anywhere in the tree)
+.DS_Store
