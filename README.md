@@ -7,7 +7,7 @@ This repository is the ecosystem ROOT — every part as a submodule plus the sup
 that builds them all with one command. **Best starting point.**
 
 > **Scope in one line:** NukeEngine is built for **single-player desktop games with deep
-> modding** — **Windows x64 + macOS (Deuterium), no mobile, no consoles**
+> modding** — **Windows x64 + macOS + Linux (Deuterium), no mobile, no consoles**
 > (see [Scope & platforms](#scope--platforms)).
 
 ## Disclaimer
@@ -32,8 +32,8 @@ choice.
 
 | Target | Where we stand |
 |--------|----------------|
-| **Platform** | **Windows 10/11 x64** and **macOS (Apple Silicon / Intel)** — the Deuterium cross-platform milestone. |
-| **Other desktop OSes** | Linux: the build plumbing is platform-split already (run dir `linux/`, POSIX branches in place), but it is untested — a direction, not a shipped feature. |
+| **Platform** | **Windows 10/11 x64**, **macOS (Apple Silicon / Intel)** and **Linux x64** — the Deuterium cross-platform milestone. |
+| **Linux specifics** | Native Vulkan incl. **hardware ray tracing** (vendored DXC), X11 + native Wayland (switchable), the editor ships as a self-contained **AppImage** and packages games into AppImages. |
 | **Mobile (iOS / Android)** | **Not supported and not planned** for the foreseeable future. |
 | **Consoles** | **Not supported and not planned** for the foreseeable future. |
 | **Focus** | Single-player games. |
@@ -171,6 +171,77 @@ when one has the engine's triplets (`universal-osx`/`arm64-osx`/`x64-osx`; on Wi
 `x64-windows`); without one, the vcpkg manifest builds the public deps into the module's
 build dir on first configure — slow once, and `libbacktrace` needs
 `brew install autoconf autoconf-archive automake libtool`.
+
+## Quick start (Linux)
+
+One-time machine setup — a C++20 toolchain, the windowing/audio dev headers and vcpkg:
+
+```
+# Debian/Ubuntu
+sudo apt install build-essential cmake ninja-build git curl zip unzip tar pkg-config \
+    autoconf autoconf-archive automake libtool bison flex \
+    libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libxext-dev \
+    libxfixes-dev libxkbcommon-dev libwayland-dev wayland-protocols \
+    libgl1-mesa-dev libegl1-mesa-dev libvulkan-dev \
+    libasound2-dev libpulse-dev libudev-dev libdbus-1-dev
+# Fedora
+sudo dnf install gcc-c++ cmake ninja-build git curl zip unzip tar pkgconf-pkg-config \
+    autoconf autoconf-archive automake libtool bison flex \
+    libX11-devel libXrandr-devel libXinerama-devel libXcursor-devel libXi-devel \
+    libXext-devel libXfixes-devel libxkbcommon-devel wayland-devel wayland-protocols-devel \
+    mesa-libGL-devel mesa-libEGL-devel vulkan-loader-devel \
+    alsa-lib-devel pulseaudio-libs-devel systemd-devel dbus-devel
+
+git clone https://github.com/microsoft/vcpkg ~/vcpkg && ~/vcpkg/bootstrap-vcpkg.sh
+export VCPKG_ROOT=$HOME/vcpkg
+```
+
+Optional but recommended: `dotnet-sdk-8.0` (NukeCSharp), `zenity` **or** `kdialog`
+(native file dialogs; the editor picks whichever matches your desktop).
+
+Then the whole thing is one script — it clones the two vendored deps that are NOT git
+submodules (DiligentCore at its pinned commit, LuaBridge3 — gitignored on purpose, the
+Windows dev tree carries them the same way), runs the classic vcpkg install (one long
+first run) including the ONE shared dynamic GLFW built with **both** X11 and Wayland
+backends, then configures and builds:
+
+```
+git clone --recurse-submodules https://github.com/Luastris/NukeEngine-Eco.git
+cd NukeEngine-Eco
+NukeUtils/build_linux.sh --deps                 # first time: deps + Debug build
+NukeUtils/build_linux.sh --release              # Package Project needs the Release tree
+NukeUtils/build_linux.sh --appimage             # + squash NukeEngine-Editor.AppImage
+```
+
+(`--deps` is idempotent; later iterations are just `NukeUtils/build_linux.sh`. The same
+`build-linux`/`build-linux-release` trees are what the editor's File → Build Engine
+drives. The Linux DXC — SM6.x shaders, ray tracing — vendors itself at configure time,
+pinned by hash, same arrangement as the Windows `deps/dxc` DLLs.)
+
+Run dir is `NukeEngine/linux/<Config>`; the editor binary sits there, and every build's
+final step mirrors the runtime (player, .so's incl. DXC and the shared GLFW, modules,
+shaders, fonts, stock config) into **`NukeEngine-Editor.AppDir`** — a flat, self-contained
+image: run it in place via `./AppRun`, or squash it into a single-file
+**`NukeEngine-Editor.AppImage`** (`--appimage`, or
+`NukeUtils/bundle_editor_linux.sh <rundir> --appimage <out>`). Package Project emits a
+`<Game>.AppDir` **and** a ready `<Game>.AppImage` — the editor carries `appimagetool`
+inside its own image, so an installed editor needs nothing from the host. Per-machine
+state (imgui layout, saved config, shader caches, saves) lives in `~/.config/<App>/` for
+installed images — an AppImage mounts read-only; dev trees keep everything in the run
+dir, same as Windows.
+
+Linux differences: rendering is **native Vulkan** — including **hardware ray tracing**
+on RT-capable GPUs (the vendored `libdxcompiler.so` compiles the SM6.5 RayQuery shaders;
+without it the engine falls back to raster). Display server: **games run native Wayland**
+by default (X11 fallback); **the editor runs on X11/XWayland** by default — its
+multi-window UX (tear-off panels, drag-to-dock) needs client-side window positioning and
+a global cursor, which the Wayland protocol forbids. The choice is explicit in
+Preferences → Interface → **Display server** (with the trade-offs spelled out in its
+tooltip), `NUKE_DISPLAY_BACKEND=x11|wayland` overrides everything; on native Wayland
+detached windows keep a dedicated caption button that re-docks them. `.nuproj`
+double-click association registers via XDG mime (Preferences → System). GUI launches see
+the same PATH/VCPKG_ROOT discovery as on macOS (`~/.local/bin`, the distro dotnet homes,
+snap/flatpak exports are probed and logged at boot).
 
 ## Technologies
 
@@ -333,6 +404,9 @@ grouped:
 ### Build system & tooling
 - **Superbuild** (this repo): one CMake tree drives the engine solution + every present
   module in dependency order, parallel via msbuild; absent modules are skipped.
+- **Linux joins Deuterium**: the same superbuild configures with plain CMake/Ninja
+  (`NukeUtils/build_linux.sh` wraps deps + configure + build + AppImage), the editor and
+  packaged games ship as self-contained AppImages, DXC vendors itself for SM6.x/RT.
 - **The editor builds its own dependencies**: File → Build Engine, output streams into
   the Console, progress in the status bar, on a worker thread — and **Package Project
   always rebuilds Release first**, so a dist can never ship stale binaries.

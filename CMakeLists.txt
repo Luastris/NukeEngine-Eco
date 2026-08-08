@@ -70,8 +70,15 @@ if(NOT WIN32 AND DEFINED NUKE_VCPKG_ROOT)
         set(NUKE_GLFW_INCLUDE "${_nuke_glfw_dyn}/include")
         set(NUKE_GLFW_LIBDIR  "${_nuke_glfw_dyn}/lib")
         message(STATUS "shared GLFW: ${NUKE_GLFW_DYLIB}")
+    elseif(NOT APPLE AND EXISTS "${_nuke_glfw_dyn}/lib/libglfw.so.3")
+        # Linux: same one-GLFW-per-process contract; the ELF soname libglfw.so.3 is what
+        # DT_NEEDED records when modules link the path directly.
+        set(NUKE_GLFW_DYLIB   "${_nuke_glfw_dyn}/lib/libglfw.so.3")
+        set(NUKE_GLFW_INCLUDE "${_nuke_glfw_dyn}/include")
+        set(NUKE_GLFW_LIBDIR  "${_nuke_glfw_dyn}/lib")
+        message(STATUS "shared GLFW: ${NUKE_GLFW_DYLIB}")
     else()
-        message(STATUS "shared GLFW not found (${_nuke_glfw_dyn}) — modules fall back to static glfw3 (objc class duplication!)")
+        message(STATUS "shared GLFW not found (${_nuke_glfw_dyn}) — modules fall back to static glfw3 (objc class duplication on macOS; duplicated GLFW state elsewhere!)")
     endif()
 endif()
 
@@ -151,6 +158,23 @@ set(CMAKE_VS_USE_DEBUG_LIBRARIES "$<CONFIG:Debug>")
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/NukeUtils/NukeGen/CMakeLists.txt")
     add_subdirectory(NukeUtils/NukeGen)
     message(STATUS "NukeGen: included (native reflection generator)")
+    # Fresh checkout, single-config generators: the module .gen.inc custom commands DEPEND on
+    # the DEPLOYED NukeUtils/bin/NukeGen path, which only appears through NukeGen's POST_BUILD
+    # copy — ninja refuses the graph ("no known rule to make it") before ever building NukeGen.
+    # Bootstrap the deployed copy once at configure time; incremental rebuilds then ride the
+    # normal target + POST_BUILD flow.
+    if(NOT WIN32 AND NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/NukeUtils/bin/NukeGen${NUKE_HOSTTOOL_SUFFIX}")
+        message(STATUS "NukeGen: bootstrapping NukeUtils/bin/NukeGen (fresh checkout)")
+        file(MAKE_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/NukeUtils/bin")
+        execute_process(
+            COMMAND "${CMAKE_CXX_COMPILER}" -std=c++20 -O2
+                    "${CMAKE_CURRENT_SOURCE_DIR}/NukeUtils/NukeGen/nukegen.cpp"
+                    -o "${CMAKE_CURRENT_SOURCE_DIR}/NukeUtils/bin/NukeGen${NUKE_HOSTTOOL_SUFFIX}"
+            RESULT_VARIABLE _nuke_gen_rc ERROR_VARIABLE _nuke_gen_err)
+        if(NOT _nuke_gen_rc EQUAL 0)
+            message(FATAL_ERROR "NukeGen bootstrap failed:\n${_nuke_gen_err}")
+        endif()
+    endif()
 endif()
 
 # ---- engine + editor ---------------------------------------------------------------------
@@ -239,6 +263,26 @@ foreach(m ${NUKE_MODULES})
         add_dependencies(${m} NukeEngineSln)
     endif()
 endforeach()
+# Every plugin exports the same C symbol `plugin` (the loader contract), and companion
+# modules link each other directly (water -> renderer, tilemap editor -> tilemap). ELF's
+# flat per-scope lookup then has a trap: when a companion loads FIRST, its dependency's
+# internal `plugin` references resolve against the COMPANION's export — the dependency's
+# constructor builds the wrong object and its own stays zeroed (crash at the first virtual
+# call), depending on directory readdir order. Windows imports never interpose and Mach-O
+# is two-level, so only ELF needs the symbolic pin.
+if(UNIX AND NOT APPLE)
+    foreach(m ${NUKE_MODULES})
+        # NukePlayer is an exe. NukeImGui is NOT a dlopen'd plugin — the editor exe links it
+        # directly and shares imgui's GImGui context pointer through an ELF COPY RELOCATION;
+        # -Bsymbolic would pin the library to its own GImGui while the exe reads the copy
+        # (CreateContext lands in one, GetActiveID reads the other — null-deref on the first
+        # project frame). The plugin-collision hazard it exists for doesn't apply here anyway.
+        if(TARGET ${m} AND NOT m STREQUAL "NukePlayer" AND NOT m STREQUAL "NukeImGui")
+            target_link_options(${m} PRIVATE "-Wl,-Bsymbolic")
+        endif()
+    endforeach()
+endif()
+
 # Editor tooling companions link their runtime module's import lib — build after it.
 if(TARGET NukeTilemapEditor AND TARGET NukeTilemap)
     add_dependencies(NukeTilemapEditor NukeTilemap)
@@ -262,6 +306,24 @@ if(APPLE AND TARGET NukeEngine-Editor)
     foreach(m ${NUKE_MODULES})
         if(TARGET ${m})
             add_dependencies(NukeEditorBundle ${m})
+        endif()
+    endforeach()
+endif()
+
+# ---- self-contained editor AppDir (Linux) --------------------------------------------
+# The same last step for Linux: mirror the runtime into NukeEngine-Editor.AppDir, flat and
+# appimagetool-ready. `bundle_editor_linux.sh <rundir> --appimage <out>` squashes the image
+# for distribution; the per-build target only refreshes the AppDir (cheap rsync).
+if(UNIX AND NOT APPLE AND TARGET NukeEngine-Editor)
+    add_custom_target(NukeEditorAppDir ALL
+        COMMAND /bin/sh "${CMAKE_CURRENT_SOURCE_DIR}/NukeUtils/bundle_editor_linux.sh"
+                "${CMAKE_CURRENT_SOURCE_DIR}/NukeEngine/${NUKE_RUN_SUBDIR}/$<CONFIG>"
+        COMMENT "Editor AppDir: syncing runtime into NukeEngine-Editor.AppDir (self-contained)"
+        VERBATIM)
+    add_dependencies(NukeEditorAppDir NukeEngine-Editor NukeEngineSln)
+    foreach(m ${NUKE_MODULES})
+        if(TARGET ${m})
+            add_dependencies(NukeEditorAppDir ${m})
         endif()
     endforeach()
 endif()
